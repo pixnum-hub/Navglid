@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Navglid – Smart Navigation Map</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#000000">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<style>
+body{margin:0;font-family:Arial}
+#map{height:100vh}
+
+/* Branding */
+#brand{
+position:absolute;
+top:10px;
+left:50%;
+transform:translateX(-50%);
+background:#111;
+color:white;
+padding:8px 18px;
+border-radius:20px;
+font-weight:bold;
+z-index:9999;
+}
+
+/* Auto install button */
+#installBtn{
+position:fixed;
+bottom:90px;
+right:20px;
+padding:12px 18px;
+border-radius:12px;
+border:none;
+background:#000;
+color:white;
+font-weight:bold;
+display:none;
+z-index:9999;
+box-shadow:0 3px 8px rgba(0,0,0,0.4);
+}
+
+/* Info panel */
+#info{
+position:absolute;
+bottom:10px;
+left:50%;
+transform:translateX(-50%);
+background:white;
+padding:14px;
+border-radius:14px;
+z-index:999;
+width:95%;
+max-width:480px;
+font-size:15px;
+box-shadow:0 3px 8px rgba(0,0,0,0.35);
+}
+
+/* Widgets */
+.widget{
+position:absolute;
+right:20px;
+background:white;
+padding:6px 12px;
+border-radius:10px;
+z-index:999;
+box-shadow:0 2px 6px rgba(0,0,0,0.3);
+}
+#speed{top:60px}
+#distance{top:105px}
+#markerDistance{top:150px}
+#navBtn{top:195px}
+
+/* Compass */
+#compass{
+position:absolute;
+top:60px;
+left:10px;
+width:44px;
+height:44px;
+border-radius:50%;
+background:white;
+text-align:center;
+line-height:44px;
+font-weight:bold;
+z-index:999;
+}
+
+/* Layer control */
+.leaflet-control-layers{
+max-height:80vh;
+overflow:auto;
+font-size:14px;
+}
+
+/* Zoom spacing */
+.leaflet-top.leaflet-left{
+margin-top:170px;
+margin-left:10px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="map"></div>
+<div id="brand">NAVGLID</div>
+
+<button id="installBtn">⬇ Install Navglid</button>
+
+<div id="info">Navglid initializing GPS...</div>
+<div id="speed" class="widget">Speed: 0 km/h</div>
+<div id="distance" class="widget">Travel: 0 m</div>
+<div id="markerDistance" class="widget">Marker: 0 m</div>
+<button id="navBtn" class="widget" onclick="toggleNav()">Navigation OFF</button>
+<div id="compass">⬆</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// ================= MAP =================
+var map=L.map('map',{maxZoom:22}).setView([20,0],2);
+
+// Map layers
+var street=L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19});
+
+var satellite=L.tileLayer(
+'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+{maxZoom:19});
+
+var hybrid=L.layerGroup([
+satellite,
+L.tileLayer(
+'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}')
+]);
+
+var terrain=L.tileLayer(
+'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17});
+
+var dark=L.tileLayer(
+'https://tiles.stadiamaps.com/tiles/alidade_dark/{z}/{x}/{y}{r}.png',
+{maxZoom:20});
+
+var light=L.tileLayer(
+'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png',
+{maxZoom:20});
+
+// Layer control
+L.control.layers({
+"Street":street,
+"Satellite":satellite,
+"Hybrid":hybrid,
+"Terrain":terrain,
+"Dark":dark,
+"Light":light
+},{},{collapsed:false}).addTo(map);
+
+street.addTo(map);
+
+// ================= GPS =================
+var marker,lastLat,lastLng,total=0;
+
+navigator.geolocation.watchPosition(p=>{
+let lat=p.coords.latitude;
+let lng=p.coords.longitude;
+let alt=p.coords.altitude||0;
+let sp=p.coords.speed||0;
+let acc=p.coords.accuracy;
+
+if(!marker){
+marker=L.marker([lat,lng]).addTo(map);
+map.setView([lat,lng],17);
+lastLat=lat; lastLng=lng;
+}else{
+let d=getDist(lastLat,lastLng,lat,lng);
+total+=d;
+distance.innerHTML="Travel: "+total.toFixed(1)+" m";
+lastLat=lat; lastLng=lng;
+marker.setLatLng([lat,lng]);
+}
+
+info.innerHTML=
+"<b>🛰 GPS Locked</b><br>"+
+"Lat: "+lat.toFixed(6)+"<br>"+
+"Lng: "+lng.toFixed(6)+"<br>"+
+"Alt: "+alt.toFixed(1)+" m<br>"+
+"Accuracy: "+acc+" m<br>"+
+"Speed: "+(sp*3.6).toFixed(1)+" km/h";
+
+speed.innerHTML="Speed: "+(sp*3.6).toFixed(1)+" km/h";
+
+},{enableHighAccuracy:true});
+
+// Distance
+function getDist(a,b,c,d){
+function r(x){return x*Math.PI/180;}
+var R=6371000;
+var dLat=r(c-a), dLon=r(d-b);
+var x=Math.sin(dLat/2)**2+
+Math.cos(r(a))*Math.cos(r(c))*Math.sin(dLon/2)**2;
+return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// Compass
+if(window.DeviceOrientationEvent){
+window.addEventListener("deviceorientation",e=>{
+if(e.alpha!=null){
+compass.style.transform=
+"rotate("+(360-e.alpha)+"deg)";
+}
+});
+}
+
+// Nav mode
+var nav=false;
+function toggleNav(){
+nav=!nav;
+navBtn.innerHTML=
+nav?"Navigation ON":"Navigation OFF";
+if(nav && marker){
+map.setView(marker.getLatLng(),18);
+}
+}
+
+// ================= AUTO INSTALL =================
+let deferredPrompt;
+const installBtn=document.getElementById("installBtn");
+
+window.addEventListener("beforeinstallprompt", e=>{
+e.preventDefault();
+deferredPrompt=e;
+installBtn.style.display="block";
+});
+
+installBtn.onclick=()=>{
+deferredPrompt.prompt();
+};
+
+// Service worker
+if('serviceWorker' in navigator){
+navigator.serviceWorker.register("sw.js");
+}
+</script>
+
+</body>
+</html>
