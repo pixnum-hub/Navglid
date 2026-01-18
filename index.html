@@ -1,204 +1,184 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Navglid – Smart Navigation Map</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#000">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
-body{margin:0;font-family:Arial}
-#map{height:100vh}
-
-/* Brand */
-#brand{
-position:absolute;top:10px;left:50%;
-transform:translateX(-50%);
-background:#111;color:#fff;
-padding:8px 18px;border-radius:20px;
-font-weight:bold;z-index:9999;
+body,html{margin:0;height:100%;font-family:Arial}
+#map{height:100%;width:100%}
+#toolbar{
+position:fixed;bottom:10px;left:50%;transform:translateX(-50%);
+background:#111;color:#fff;border-radius:12px;
+padding:8px;display:flex;gap:8px;z-index:9999
 }
-
-/* Info */
+#toolbar button,select{padding:6px;border-radius:6px;border:none}
 #info{
-position:absolute;bottom:90px;left:50%;
-transform:translateX(-50%);
-background:#fff;padding:12px;
-border-radius:14px;z-index:900;
+position:fixed;top:10px;left:50%;transform:translateX(-50%);
+background:#000c;color:#fff;padding:6px 12px;border-radius:8px;z-index:9999
 }
-
-/* Widgets */
-.widget{
-position:absolute;right:20px;
-background:#fff;padding:6px 12px;
-border-radius:10px;z-index:800;
-}
-#speed{top:80px}
-#distance{top:125px}
-#markerDistance{top:170px}
-#addA{top:215px}
-#addB{top:260px}
-#clearMarkers{top:305px}
-
-/* Bottom toolbar */
-#toolbarWrap{
-position:fixed;bottom:0;left:0;width:100%;
-background:#fff;z-index:5000;
-border-radius:18px 18px 0 0;
-box-shadow:0 -4px 12px rgba(0,0,0,.3);
-}
-#toolbarHeader{
-padding:10px;text-align:center;
-font-weight:bold;border-bottom:1px solid #ddd;
-cursor:pointer;
-}
-#toolbarContent{
-max-height:40vh;overflow:auto;
-padding:10px;display:none;
-}
-.show #toolbarContent{display:block}
+#areaValue,#distValue{margin-top:4px;font-size:13px}
+.collapsed{height:26px;overflow:hidden}
 </style>
 </head>
-
 <body>
-
 <div id="map"></div>
-<div id="brand">NAVGLID</div>
 
-<div id="info">📡 Detecting GPS...</div>
-<div id="speed" class="widget">Speed: 0 km/h</div>
-<div id="distance" class="widget">Travel: 0 m</div>
-<div id="markerDistance" class="widget">A ↔ B: 0 m</div>
-
-<button id="addA" class="widget">Set Point A</button>
-<button id="addB" class="widget">Set Point B</button>
-<button id="clearMarkers" class="widget">Clear</button>
-
-<!-- Bottom toolbar -->
-<div id="toolbarWrap">
-<div id="toolbarHeader" onclick="toggleToolbar()">⬆ Map Styles</div>
-<div id="toolbarContent"></div>
+<div id="info">
+<span id="gps">Detecting GPS...</span><br>
+Lat:<span id="lat">--</span> Lng:<span id="lng">--</span><br>
+Alt:<span id="alt">--</span> Speed:<span id="spd">--</span>
+<div id="areaValue">Area: 0</div>
+<div id="distValue">Distance: 0</div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<div id="toolbar">
+<button id="toggle">▼</button>
+<select id="style"></select>
+<button id="addMarker">Add Marker</button>
+<button id="clearMarker">Clear</button>
+<button id="distBtn">Distance</button>
+<button id="areaBtn">Area</button>
+<button id="finishArea">Finish</button>
+<button id="clearArea">Clear Area</button>
+<button id="unit">KM</button>
+</div>
 
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-geometryutil"></script>
 <script>
-var map=L.map('map',{maxZoom:22}).setView([20,0],2);
+/* MAP INIT */
+const map=L.map('map',{zoomControl:true}).setView([20,78],5);
 
-// MAP LAYERS
-var street=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-var satellite=L.tileLayer(
-'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
-var terrain=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
-
-street.addTo(map);
-
-const layers={Street:street,Satellite:satellite,Terrain:terrain};
-
-// TOOLBAR
-const cont=document.getElementById("toolbarContent");
-for(let k in layers){
-let b=document.createElement("button");
-b.innerHTML=k;
-b.style.width="100%";
-b.style.padding="10px";
-b.onclick=()=>{
-for(let i in layers)map.removeLayer(layers[i]);
-layers[k].addTo(map);
+/* MAP STYLES */
+const layers={
+Street:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
+Satellite:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'),
+Hybrid:L.layerGroup([
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'),
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{opacity:.5})
+]),
+Terrain:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'),
+Dark:L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_dark/{z}/{x}/{y}{r}.png'),
+Light:L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png')
 };
-cont.appendChild(b);
-}
-function toggleToolbar(){
-toolbarWrap.classList.toggle("show");
-}
+
+layers.Street.addTo(map);
+
+const styleSel=document.getElementById('style');
+Object.keys(layers).forEach(k=>{
+let o=document.createElement('option');o.value=k;o.text=k;styleSel.appendChild(o);
+});
+
+styleSel.onchange=()=>{
+Object.values(layers).forEach(l=>map.removeLayer(l));
+layers[styleSel.value].addTo(map);
+};
 
 /* GPS */
-let userMarker=null;
-let lastPos=null;
-let totalDist=0;
+let userMarker;
+if(navigator.geolocation){
+navigator.geolocation.watchPosition(p=>{
+let{latitude,longitude,altitude,speed,accuracy}=p.coords;
+map.setView([latitude,longitude],16);
+userMarker?
+userMarker.setLatLng([latitude,longitude]):
+userMarker=L.marker([latitude,longitude]).addTo(map);
 
-function gpsSuccess(p){
-let lat=p.coords.latitude;
-let lng=p.coords.longitude;
-let sp=p.coords.speed||0;
-
-info.innerHTML="📍 GPS Locked";
-speed.innerHTML="Speed: "+(sp*3.6).toFixed(1)+" km/h";
-
-if(!userMarker){
-userMarker=L.marker([lat,lng]).addTo(map);
-map.setView([lat,lng],18);
-}else{
-userMarker.setLatLng([lat,lng]);
+lat.textContent=latitude.toFixed(5);
+lng.textContent=longitude.toFixed(5);
+alt.textContent=altitude?altitude.toFixed(1):"--";
+spd.textContent=speed?(speed*3.6).toFixed(1)+' km/h':'0';
+gps.textContent="GPS Active";
+},e=>gps.textContent="GPS Blocked",{enableHighAccuracy:true});
 }
 
-if(lastPos){
-totalDist+=map.distance(lastPos,[lat,lng]);
-distance.innerHTML="Travel: "+formatDist(totalDist);
-}
-lastPos=[lat,lng];
+/* TOOLBAR COLLAPSE */
+const tb=document.getElementById('toolbar');
+toggle.onclick=()=>tb.classList.toggle('collapsed');
+
+/* MARKER */
+let marks=[];
+addMarker.onclick=()=>{
+if(!userMarker)return;
+let m=L.marker(userMarker.getLatLng()).addTo(map);
+marks.push(m);
+};
+clearMarker.onclick=()=>{marks.forEach(m=>map.removeLayer(m));marks=[]};
+
+/* DISTANCE */
+let dPts=[],dLine;
+distBtn.onclick=()=>{
+if(!userMarker)return;
+let p=userMarker.getLatLng();
+dPts.push(p);
+dLine&&map.removeLayer(dLine);
+dLine=L.polyline(dPts,{color:'blue'}).addTo(map);
+calcDist();
+};
+function calcDist(){
+let d=0;
+for(let i=1;i<dPts.length;i++)
+d+=map.distance(dPts[i-1],dPts[i]);
+distValue.innerHTML="Distance: "+formatDist(d);
 }
 
-function gpsError(err){
-if(err.code===1) info.innerHTML="❌ Permission denied";
-else if(err.code===2) info.innerHTML="📡 GPS unavailable";
-else info.innerHTML="⚠ GPS timeout";
+/* AREA TOOL */
+let areaPts=[],areaPoly,areaMarkers=[],areaFinished=false;
+areaBtn.onclick=()=>{
+if(!userMarker||areaFinished)return;
+let p=userMarker.getLatLng();
+areaPts.push(p);
+let m=L.marker(p,{draggable:true}).addTo(map);
+m.on('drag',()=>{
+let i=areaMarkers.indexOf(m);
+areaPts[i]=m.getLatLng();
+updateArea(false);
+});
+areaMarkers.push(m);
+updateArea(false);
+};
+
+finishArea.onclick=()=>{
+if(areaPts.length<3)return;
+areaFinished=true;
+updateArea(true);
+};
+
+clearArea.onclick=()=>{
+areaPts=[];areaFinished=false;
+areaMarkers.forEach(m=>map.removeLayer(m));
+areaMarkers=[];
+areaPoly&&map.removeLayer(areaPoly);
+areaValue.innerHTML='Area: 0';
+};
+
+function updateArea(final){
+areaPoly&&map.removeLayer(areaPoly);
+areaPoly=L.polygon(areaPts,{color:final?'red':'green',fillOpacity:.25}).addTo(map);
+if(areaPts.length>=3){
+let a=L.GeometryUtil.geodesicArea(areaPts);
+areaValue.innerHTML=(final?'FINAL AREA: ':'Live Area: ')+formatArea(a);
+}
 }
 
-navigator.geolocation.watchPosition(
-gpsSuccess,
-gpsError,
-{enableHighAccuracy:true,timeout:10000}
-);
+/* UNIT TOGGLE */
+let unit='km';
+unit.onclick=()=>{
+unit=unit==='km'?'mi':'km';
+unit.textContent=unit.toUpperCase();
+calcDist();
+if(areaPts.length>=3)updateArea(areaFinished);
+};
 
-/* DISTANCE FORMAT */
 function formatDist(m){
-let km=(m/1000).toFixed(2);
-let mile=(m/1609.34).toFixed(2);
-return `${m.toFixed(1)} m | ${km} km | ${mile} mi`;
+return unit==='km'?(m/1000).toFixed(3)+' km':(m/1609).toFixed(3)+' mi';
 }
 
-/* MARKER DISTANCE */
-let A=null,B=null,line=null;
-
-function updateAB(){
-if(A && B){
-let d=map.distance(A.getLatLng(),B.getLatLng());
-markerDistance.innerHTML=
-"A ↔ B: "+formatDist(d);
-
-if(line) map.removeLayer(line);
-line=L.polyline([A.getLatLng(),B.getLatLng()],
-{color:"red"}).addTo(map);
+function formatArea(a){
+return unit==='km'?(a/1e6).toFixed(3)+' km²':(a/2589988).toFixed(3)+' mi²';
 }
-}
-
-addA.onclick=()=>{
-if(!userMarker) return alert("GPS not ready!");
-if(A) map.removeLayer(A);
-A=L.marker(userMarker.getLatLng(),{draggable:true}).addTo(map);
-A.on("drag",updateAB);
-updateAB();
-};
-
-addB.onclick=()=>{
-if(!userMarker) return alert("GPS not ready!");
-if(B) map.removeLayer(B);
-B=L.marker(userMarker.getLatLng(),{draggable:true}).addTo(map);
-B.on("drag",updateAB);
-updateAB();
-};
-
-clearMarkers.onclick=()=>{
-if(A) map.removeLayer(A);
-if(B) map.removeLayer(B);
-if(line) map.removeLayer(line);
-A=B=line=null;
-markerDistance.innerHTML="A ↔ B: 0 m";
-};
 </script>
-
 </body>
 </html>
