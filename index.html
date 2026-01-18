@@ -28,7 +28,7 @@ font-weight:bold;
 z-index:9999;
 }
 
-/* Auto install button */
+/* Auto install */
 #installBtn{
 position:fixed;
 bottom:90px;
@@ -41,10 +41,9 @@ color:white;
 font-weight:bold;
 display:none;
 z-index:9999;
-box-shadow:0 3px 8px rgba(0,0,0,0.4);
 }
 
-/* Info panel */
+/* Info */
 #info{
 position:absolute;
 bottom:10px;
@@ -70,15 +69,15 @@ border-radius:10px;
 z-index:999;
 box-shadow:0 2px 6px rgba(0,0,0,0.3);
 }
-#speed{top:60px}
-#distance{top:105px}
-#markerDistance{top:150px}
-#navBtn{top:195px}
+#speed{top:70px}
+#distance{top:115px}
+#markerDistance{top:160px}
+#navBtn{top:205px}
 
 /* Compass */
 #compass{
 position:absolute;
-top:60px;
+top:70px;
 left:10px;
 width:44px;
 height:44px;
@@ -90,16 +89,24 @@ font-weight:bold;
 z-index:999;
 }
 
-/* Layer control */
+/* TOOLBAR FIX */
+.leaflet-top.leaflet-right{
+top:60px !important;
+right:10px !important;
+}
+
 .leaflet-control-layers{
-max-height:80vh;
-overflow:auto;
+max-height:60vh;
+overflow-y:auto;
 font-size:14px;
+background:white;
+border-radius:12px;
+box-shadow:0 3px 8px rgba(0,0,0,0.3);
 }
 
 /* Zoom spacing */
 .leaflet-top.leaflet-left{
-margin-top:170px;
+margin-top:220px;
 margin-left:10px;
 }
 </style>
@@ -109,7 +116,6 @@ margin-left:10px;
 
 <div id="map"></div>
 <div id="brand">NAVGLID</div>
-
 <button id="installBtn">⬇ Install Navglid</button>
 
 <div id="info">Navglid initializing GPS...</div>
@@ -123,7 +129,7 @@ margin-left:10px;
 
 <script>
 // ================= MAP =================
-var map=L.map('map',{maxZoom:22}).setView([20,0],2);
+var map=L.map('map',{maxZoom:22,zoomControl:true}).setView([20,0],2);
 
 // Map layers
 var street=L.tileLayer(
@@ -150,8 +156,8 @@ var light=L.tileLayer(
 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png',
 {maxZoom:20});
 
-// Layer control
-L.control.layers({
+// Control
+var layerControl=L.control.layers({
 "Street":street,
 "Satellite":satellite,
 "Hybrid":hybrid,
@@ -160,6 +166,7 @@ L.control.layers({
 "Light":light
 },{},{collapsed:false}).addTo(map);
 
+layerControl.setPosition('topright');
 street.addTo(map);
 
 // ================= GPS =================
@@ -216,7 +223,7 @@ compass.style.transform=
 });
 }
 
-// Nav mode
+// Nav
 var nav=false;
 function toggleNav(){
 nav=!nav;
@@ -227,10 +234,12 @@ map.setView(marker.getLatLng(),18);
 }
 }
 
-// ================= AUTO INSTALL =================
-let deferredPrompt;
-const installBtn=document.getElementById("installBtn");
+// PWA
+if('serviceWorker' in navigator){
+navigator.serviceWorker.register("sw.js");
+}
 
+let deferredPrompt;
 window.addEventListener("beforeinstallprompt", e=>{
 e.preventDefault();
 deferredPrompt=e;
@@ -240,11 +249,6 @@ installBtn.style.display="block";
 installBtn.onclick=()=>{
 deferredPrompt.prompt();
 };
-
-// Service worker
-if('serviceWorker' in navigator){
-navigator.serviceWorker.register("sw.js");
-}
 </script>
 
 </body>
