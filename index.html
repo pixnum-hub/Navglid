@@ -4,88 +4,32 @@
 <meta charset="UTF-8">
 <title>Navglid</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-/>
-
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
-html, body {
-  margin: 0;
-  height: 100%;
-  font-family: system-ui, sans-serif;
-}
+html, body { margin:0; height:100%; font-family: system-ui,sans-serif; }
+#map { height:100%; width:100%; }
 
-#map {
-  height: 100%;
-  width: 100%;
-}
-
-/* Top Info Bar */
 #infoBar {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0,0,0,0.75);
-  color: #fff;
-  padding: 8px 14px;
-  border-radius: 10px;
-  font-size: 13px;
-  z-index: 1000;
+  position: absolute; top:10px; left:50%; transform:translateX(-50%);
+  background: rgba(0,0,0,0.75); color:#fff; padding:8px 14px;
+  border-radius:10px; font-size:13px; z-index:1000;
 }
-
-/* Speedometer */
 #speed {
-  position: absolute;
-  top: 70px;
-  right: 12px;
-  background: rgba(0,0,0,0.75);
-  color: #0f0;
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-weight: bold;
-  z-index: 1000;
+  position:absolute; top:70px; right:12px; background: rgba(0,0,0,0.75);
+  color:#00ff88; padding:8px 12px; border-radius:10px; font-weight:bold; z-index:1000;
 }
-
-/* Bottom Toolbar */
 #toolbar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(20,20,20,0.95);
-  color: #fff;
-  padding: 10px;
-  z-index: 1000;
-  border-top-left-radius: 16px;
-  border-top-right-radius: 16px;
+  position:absolute; bottom:0; left:0; right:0; background: rgba(20,20,20,0.95);
+  color:#fff; padding:10px; z-index:1000; border-top-left-radius:16px; border-top-right-radius:16px;
 }
-
-#toolbar button, #toolbar select {
-  margin: 4px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: none;
-}
-
-#toolbar button {
-  background: #1e88e5;
-  color: white;
-}
-
-#toolbar select {
-  background: #333;
-  color: white;
-}
+#toolbar button, #toolbar select { margin:4px; padding:8px 10px; border-radius:8px; border:none; }
+#toolbar button { background:#1e88e5; color:white; }
+#toolbar select { background:#333; color:white; }
 </style>
 </head>
-
 <body>
 
 <div id="map"></div>
-
 <div id="infoBar">Detecting GPS…</div>
 <div id="speed">Speed: 0 km/h</div>
 
@@ -96,20 +40,25 @@ html, body {
     <option value="terrain">Terrain</option>
     <option value="dark">Dark</option>
   </select>
-
-  <button onclick="addMarker()">Add Marker</button>
-  <button onclick="clearMarkers()">Clear</button>
+  <button onclick="toggleAddMarker()">Add Marker</button>
+  <button onclick="clearMeasurement()">Clear</button>
   <button onclick="toggleFollow()">Follow</button>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script>
-let map = L.map('map', { zoomControl: true }).setView([0,0], 2);
+/* MAP INIT */
+let map = L.map('map').setView([20,78],5);
 let followMode = true;
-let markers = [];
 let lastPos = null;
-let distanceLine = null;
+let addingMarker = false;
+
+/* USER LOCATION */
+let userMarker, accuracyCircle;
+
+/* MARKERS & DISTANCE */
+let measureMarkers = [];
+let distanceLine, distancePopup;
 
 /* MAP LAYERS */
 const layers = {
@@ -118,7 +67,6 @@ const layers = {
   terrain: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'),
   dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png')
 };
-
 layers.street.addTo(map);
 
 /* MAP STYLE SWITCH */
@@ -127,78 +75,97 @@ document.getElementById('mapStyle').onchange = e => {
   layers[e.target.value].addTo(map);
 };
 
-/* GPS */
-function startGPS(){
-  if(!navigator.geolocation){
-    document.getElementById('infoBar').textContent = 'GPS not supported';
+/* GPS START */
+const infoBar = document.getElementById('infoBar');
+const speedDiv = document.getElementById('speed');
+
+function startGPS() {
+  if (!navigator.geolocation) {
+    infoBar.textContent = 'GPS not supported';
     return;
   }
 
-  navigator.geolocation.watchPosition(pos=>{
-    const { latitude, longitude, altitude, speed } = pos.coords;
+  navigator.geolocation.watchPosition(
+    pos => {
+      const { latitude, longitude, altitude, accuracy, speed } = pos.coords;
+      lastPos = [latitude, longitude];
 
-    document.getElementById('infoBar').innerHTML =
-      `Lat: ${latitude.toFixed(6)} | Lng: ${longitude.toFixed(6)} | Alt: ${altitude ? altitude.toFixed(1)+' m' : '--'}`;
+      infoBar.innerHTML = `Lat: ${latitude.toFixed(6)} | Lng: ${longitude.toFixed(6)} | Alt: ${altitude ? altitude.toFixed(1)+' m':'--'}`;
+      speedDiv.textContent = `Speed: ${speed ? Math.round(speed*3.6):0} km/h`;
 
-    document.getElementById('speed').textContent =
-      `Speed: ${speed ? Math.round(speed*3.6) : 0} km/h`;
+      if(!userMarker){
+        userMarker = L.circleMarker(lastPos, { radius:8, fillColor:'#1e88e5', color:'#fff', weight:2, fillOpacity:1 }).addTo(map);
+        accuracyCircle = L.circle(lastPos, { radius:accuracy, color:'#1e88e5', opacity:0.3, fillOpacity:0.1 }).addTo(map);
+        map.setView(lastPos,17);
+      } else {
+        userMarker.setLatLng(lastPos);
+        accuracyCircle.setLatLng(lastPos).setRadius(accuracy);
+      }
 
-    if(!lastPos){
-      map.setView([latitude, longitude], 18);
-    }
-
-    if(followMode){
-      map.setView([latitude, longitude], map.getZoom());
-    }
-
-    lastPos = [latitude, longitude];
-  },
-  err=>{
-    document.getElementById('infoBar').textContent = 'GPS blocked or denied';
-  },
-  {
-    enableHighAccuracy: true,
-    maximumAge: 0,
-    timeout: 10000
-  });
+      if(followMode) map.panTo(lastPos, {animate:true});
+    },
+    err => { infoBar.textContent = 'GPS blocked or denied'; },
+    { enableHighAccuracy:true, maximumAge:0, timeout:15000 }
+  );
 }
 
-/* MARKERS & DISTANCE */
-function addMarker(){
-  if(!lastPos) return;
+/* FOLLOW TOGGLE */
+function toggleFollow(){ followMode = !followMode; }
 
-  const m = L.marker(lastPos).addTo(map);
-  markers.push(m);
+/* ADD MARKER MODE */
+function toggleAddMarker(){ addingMarker = !addingMarker; alert(addingMarker?'Tap map to add marker':'Add Marker mode off'); }
 
-  if(markers.length >= 2){
-    if(distanceLine) map.removeLayer(distanceLine);
+map.on('click', e => {
+  if(!addingMarker) return;
 
-    const p1 = markers[markers.length-2].getLatLng();
-    const p2 = markers[markers.length-1].getLatLng();
+  if(measureMarkers.length === 2) clearMeasurement();
 
-    distanceLine = L.polyline([p1, p2], { color: 'red' }).addTo(map);
-    const d = map.distance(p1, p2) / 1000;
+  const marker = L.marker(e.latlng, { draggable:true }).addTo(map);
+  marker.on('drag', updateDistance);
+  marker.on('dragend', updateDistance);
+  measureMarkers.push(marker);
 
-    m.bindPopup(`Distance: ${d.toFixed(2)} km`).openPopup();
+  if(measureMarkers.length === 2){
+    distanceLine = L.polyline([], { color:'red', weight:3 }).addTo(map);
+    updateDistance();
+  }
+
+  addingMarker = false;
+});
+
+/* UPDATE DISTANCE LIVE */
+function updateDistance(){
+  if(measureMarkers.length < 2) return;
+  const p1 = measureMarkers[0].getLatLng();
+  const p2 = measureMarkers[1].getLatLng();
+
+  distanceLine.setLatLngs([p1,p2]);
+
+  const meters = map.distance(p1,p2);
+  const km = meters/1000;
+  const miles = km*0.621371;
+  const text = `<b>Distance</b><br>${km.toFixed(2)} km<br>${miles.toFixed(2)} miles`;
+
+  if(!distancePopup){
+    distancePopup = L.popup({closeButton:false})
+      .setLatLng(L.latLngBounds([p1,p2]).getCenter())
+      .setContent(text)
+      .openOn(map);
+  } else {
+    distancePopup.setLatLng(L.latLngBounds([p1,p2]).getCenter()).setContent(text);
   }
 }
 
-function clearMarkers(){
-  markers.forEach(m => map.removeLayer(m));
-  markers = [];
-  if(distanceLine) map.removeLayer(distanceLine);
+/* CLEAR MEASUREMENT */
+function clearMeasurement(){
+  measureMarkers.forEach(m=>map.removeLayer(m));
+  measureMarkers=[];
+  if(distanceLine){ map.removeLayer(distanceLine); distanceLine=null; }
+  if(distancePopup){ map.closePopup(distancePopup); distancePopup=null; }
 }
 
-/* FOLLOW MODE */
-function toggleFollow(){
-  followMode = !followMode;
-}
-
-/* AUTO START */
-window.onload = () => {
-  setTimeout(startGPS, 500);
-};
+/* AUTO START GPS */
+window.onload = () => { setTimeout(startGPS,500); }
 </script>
-
 </body>
 </html>
