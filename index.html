@@ -53,6 +53,7 @@ let followMode = true;
 let lastPos = null;
 let addingMarker = false;
 let isDraggingMarker = false;
+let userInteracting = false;
 
 /* USER LOCATION */
 let userMarker, accuracyCircle;
@@ -103,7 +104,8 @@ function startGPS() {
         accuracyCircle.setLatLng(lastPos).setRadius(accuracy);
       }
 
-      if(followMode && !isDraggingMarker){
+      /* SMART AUTO-FOLLOW */
+      if(followMode && !isDraggingMarker && !userInteracting){
         map.panTo(lastPos, {animate:true});
       }
     },
@@ -118,6 +120,13 @@ function toggleFollow(){ followMode = !followMode; }
 /* ADD MARKER MODE */
 function toggleAddMarker(){ addingMarker = !addingMarker; alert(addingMarker?'Tap map to add marker':'Add Marker mode off'); }
 
+/* MAP INTERACTION DETECTION */
+map.on('mousedown touchstart', ()=>{ userInteracting = true; });
+map.on('mouseup touchend', ()=>{ userInteracting = false; });
+map.on('zoomstart', ()=>{ userInteracting = true; });
+map.on('zoomend', ()=>{ userInteracting = false; });
+
+/* ADD MARKER BY MAP CLICK */
 map.on('click', e => {
   if(!addingMarker) return;
 
@@ -125,7 +134,6 @@ map.on('click', e => {
 
   const marker = L.marker(e.latlng, { draggable:true }).addTo(map);
 
-  /* DRAG FLAG TO PREVENT SNAP */
   marker.on('dragstart', ()=>{ isDraggingMarker = true; });
   marker.on('drag', updateDistance);
   marker.on('dragend', ()=>{
