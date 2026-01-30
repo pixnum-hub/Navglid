@@ -52,6 +52,7 @@ let map = L.map('map').setView([20,78],5);
 let followMode = true;
 let lastPos = null;
 let addingMarker = false;
+let isDraggingMarker = false;
 
 /* USER LOCATION */
 let userMarker, accuracyCircle;
@@ -102,7 +103,9 @@ function startGPS() {
         accuracyCircle.setLatLng(lastPos).setRadius(accuracy);
       }
 
-      if(followMode) map.panTo(lastPos, {animate:true});
+      if(followMode && !isDraggingMarker){
+        map.panTo(lastPos, {animate:true});
+      }
     },
     err => { infoBar.textContent = 'GPS blocked or denied'; },
     { enableHighAccuracy:true, maximumAge:0, timeout:15000 }
@@ -121,8 +124,15 @@ map.on('click', e => {
   if(measureMarkers.length === 2) clearMeasurement();
 
   const marker = L.marker(e.latlng, { draggable:true }).addTo(map);
+
+  /* DRAG FLAG TO PREVENT SNAP */
+  marker.on('dragstart', ()=>{ isDraggingMarker = true; });
   marker.on('drag', updateDistance);
-  marker.on('dragend', updateDistance);
+  marker.on('dragend', ()=>{
+    isDraggingMarker = false;
+    updateDistance();
+  });
+
   measureMarkers.push(marker);
 
   if(measureMarkers.length === 2){
