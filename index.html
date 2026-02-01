@@ -3,187 +3,159 @@
 <head>
 <meta charset="UTF-8">
 <title>Navglid</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<style>
-html, body { margin:0; height:100%; font-family: system-ui,sans-serif; }
-#map { height:100%; width:100%; }
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 
-#infoBar {
-  position: absolute; top:10px; left:50%; transform:translateX(-50%);
-  background: rgba(0,0,0,0.75); color:#fff; padding:8px 14px;
-  border-radius:10px; font-size:13px; z-index:1000;
-}
-#speed {
-  position:absolute; top:70px; right:12px; background: rgba(0,0,0,0.75);
-  color:#00ff88; padding:8px 12px; border-radius:10px; font-weight:bold; z-index:1000;
-}
-#toolbar {
-  position:absolute; bottom:0; left:0; right:0; background: rgba(20,20,20,0.95);
-  color:#fff; padding:10px; z-index:1000; border-top-left-radius:16px; border-top-right-radius:16px;
-}
-#toolbar button, #toolbar select { margin:4px; padding:8px 10px; border-radius:8px; border:none; }
-#toolbar button { background:#1e88e5; color:white; }
-#toolbar select { background:#333; color:white; }
+<!-- Leaflet CSS & JS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+html,body{margin:0;padding:0;height:100%;font-family:system-ui,sans-serif;}
+#map{height:100%;width:100%;}
+#status{position:absolute;top:10px;left:50%;transform:translateX(-50%);
+ background:rgba(0,0,0,.75);color:#fff;padding:8px 14px;border-radius:12px;font-size:14px;z-index:1000;}
+#speed{position:absolute;top:70px;right:12px;background:rgba(0,0,0,.75);color:#0f0;
+ padding:8px 12px;border-radius:12px;font-weight:bold;z-index:1000;}
+#toolbar{position:absolute;bottom:0;left:0;right:0;background:rgba(20,20,20,.95);
+ color:#fff;padding:10px;border-radius:18px 18px 0 0;z-index:1000;}
+#toolbar button,#toolbar select{margin:4px;padding:8px 12px;border-radius:10px;border:none;}
+#toolbar button{background:#1e88e5;color:#fff;}
+#toolbar select{background:#333;color:#fff;}
 </style>
 </head>
-<body>
 
+<body>
 <div id="map"></div>
-<div id="infoBar">Detecting GPS…</div>
+<div id="status">Detecting GPS…</div>
 <div id="speed">Speed: 0 km/h</div>
 
 <div id="toolbar">
-  <select id="mapStyle">
-    <option value="street">Street</option>
-    <option value="satellite">Satellite</option>
-    <option value="terrain">Terrain</option>
-    <option value="dark">Dark</option>
-  </select>
-  <button onclick="toggleAddMarker()">Add Marker</button>
-  <button onclick="clearMeasurement()">Clear</button>
-  <button onclick="toggleFollow()">Follow</button>
+<select id="mapStyle">
+<option value="street">Street</option>
+<option value="satellite">Satellite</option>
+<option value="terrain">Terrain</option>
+<option value="dark">Dark</option>
+</select>
+<button onclick="enableMeasure()">Add Marker</button>
+<button onclick="clearMeasure()">Clear</button>
+<button onclick="toggleFollow()">Follow</button>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-/* MAP INIT */
-let map = L.map('map').setView([20,78],5);
-let followMode = true;
-let lastPos = null;
-let addingMarker = false;
-let isDraggingMarker = false;
-let userInteracting = false;
+/* -------- MAP INIT -------- */
+const map=L.map('map',{tap:false,maxZoom:19,minZoom:2}).setView([20,0],3);
 
-/* USER LOCATION */
-let userMarker, accuracyCircle;
-
-/* MARKERS & DISTANCE */
-let measureMarkers = [];
-let distanceLine, distancePopup;
-
-/* MAP LAYERS */
-const layers = {
-  street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
-  satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'),
-  terrain: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'),
-  dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png')
+const layers={
+ street:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
+ satellite:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'),
+ terrain:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'),
+ dark:L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png')
 };
 layers.street.addTo(map);
 
 /* MAP STYLE SWITCH */
-document.getElementById('mapStyle').onchange = e => {
-  Object.values(layers).forEach(l => map.removeLayer(l));
-  layers[e.target.value].addTo(map);
+document.getElementById('mapStyle').onchange=e=>{
+ Object.values(layers).forEach(l=>map.removeLayer(l));
+ layers[e.target.value].addTo(map);
 };
 
-/* GPS START */
-const infoBar = document.getElementById('infoBar');
-const speedDiv = document.getElementById('speed');
+/* -------- VARIABLES -------- */
+let followMode=true;
+let measuring=false;
+let dragging=false;
+let firstFix=true;
+let lastPos=null;
+let userMarker=null,accuracyCircle=null;
+let markers=[],line,popup;
+const statusBox=document.getElementById('status');
+const speedBox=document.getElementById('speed');
 
-function startGPS() {
-  if (!navigator.geolocation) {
-    infoBar.textContent = 'GPS not supported';
-    return;
-  }
+/* -------- GPS -------- */
+function onLocationFound(pos){
+ const lat=pos.coords.latitude;
+ const lng=pos.coords.longitude;
+ const acc=pos.coords.accuracy;
+ const spd=pos.coords.speed;
 
-  navigator.geolocation.watchPosition(
-    pos => {
-      const { latitude, longitude, altitude, accuracy, speed } = pos.coords;
-      lastPos = [latitude, longitude];
+ lastPos=[lat,lng];
+ statusBox.textContent=`GPS Active • Accuracy ${Math.round(acc)} m`;
+ speedBox.textContent=`Speed: ${spd?Math.round(spd*3.6):0} km/h`;
 
-      infoBar.innerHTML = `Lat: ${latitude.toFixed(6)} | Lng: ${longitude.toFixed(6)} | Alt: ${altitude ? altitude.toFixed(1)+' m':'--'}`;
-      speedDiv.textContent = `Speed: ${speed ? Math.round(speed*3.6):0} km/h`;
+ if(!userMarker){
+  userMarker=L.circleMarker([lat,lng],{radius:8,color:'#fff',fillColor:'#1e88e5',fillOpacity:1}).addTo(map);
+  accuracyCircle=L.circle([lat,lng],{radius:acc,color:'#1e88e5',fillOpacity:0.15}).addTo(map);
+  map.setView([lat,lng],16);
+ }else{
+  userMarker.setLatLng([lat,lng]);
+  accuracyCircle.setLatLng([lat,lng]).setRadius(acc);
+ }
 
-      if(!userMarker){
-        userMarker = L.circleMarker(lastPos, { radius:8, fillColor:'#1e88e5', color:'#fff', weight:2, fillOpacity:1 }).addTo(map);
-        accuracyCircle = L.circle(lastPos, { radius:accuracy, color:'#1e88e5', opacity:0.3, fillOpacity:0.1 }).addTo(map);
-        map.setView(lastPos,17);
-      } else {
-        userMarker.setLatLng(lastPos);
-        accuracyCircle.setLatLng(lastPos).setRadius(accuracy);
-      }
-
-      /* SMART AUTO-FOLLOW */
-      if(followMode && !isDraggingMarker && !userInteracting){
-        map.panTo(lastPos, {animate:true});
-      }
-    },
-    err => { infoBar.textContent = 'GPS blocked or denied'; },
-    { enableHighAccuracy:true, maximumAge:0, timeout:15000 }
-  );
+ if(followMode && !measuring && !dragging){
+  map.panTo([lat,lng],{animate:true});
+ }
 }
 
-/* FOLLOW TOGGLE */
-function toggleFollow(){ followMode = !followMode; }
+function onLocationError(err){
+ if(err.code===1) statusBox.textContent='Location permission denied';
+ else if(err.code===2) statusBox.textContent='GPS unavailable';
+ else if(err.code===3) statusBox.textContent='GPS timeout';
+ else statusBox.textContent='GPS error';
+}
 
-/* ADD MARKER MODE */
-function toggleAddMarker(){ addingMarker = !addingMarker; alert(addingMarker?'Tap map to add marker':'Add Marker mode off'); }
+if('geolocation' in navigator){
+ navigator.geolocation.watchPosition(onLocationFound,onLocationError,{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
+}else statusBox.textContent='Geolocation not supported';
 
-/* MAP INTERACTION DETECTION */
-map.on('mousedown touchstart', ()=>{ userInteracting = true; });
-map.on('mouseup touchend', ()=>{ userInteracting = false; });
-map.on('zoomstart', ()=>{ userInteracting = true; });
-map.on('zoomend', ()=>{ userInteracting = false; });
+/* -------- FOLLOW TOGGLE -------- */
+function toggleFollow(){ followMode=!followMode; }
 
-/* ADD MARKER BY MAP CLICK */
-map.on('click', e => {
-  if(!addingMarker) return;
+/* -------- MEASURE MARKERS -------- */
+function enableMeasure(){ measuring=true; followMode=false; alert("Tap map to place markers"); }
+function clearMeasure(){
+ markers.forEach(m=>map.removeLayer(m));
+ markers=[]; if(line) map.removeLayer(line); line=null;
+ if(popup) map.closePopup(popup); popup=null;
+ measuring=false;
+}
 
-  if(measureMarkers.length === 2) clearMeasurement();
-
-  const marker = L.marker(e.latlng, { draggable:true }).addTo(map);
-
-  marker.on('dragstart', ()=>{ isDraggingMarker = true; });
-  marker.on('drag', updateDistance);
-  marker.on('dragend', ()=>{
-    isDraggingMarker = false;
-    updateDistance();
-  });
-
-  measureMarkers.push(marker);
-
-  if(measureMarkers.length === 2){
-    distanceLine = L.polyline([], { color:'red', weight:3 }).addTo(map);
-    updateDistance();
-  }
-
-  addingMarker = false;
+map.on('click',e=>{
+ if(!measuring) return;
+ if(markers.length===2) clearMeasure();
+ const m=L.marker(e.latlng,{draggable:true}).addTo(map);
+ m.on('dragstart',()=>{ dragging=true; followMode=false; });
+ m.on('drag',updateDistance);
+ m.on('dragend',()=>{ dragging=false; updateDistance(); });
+ markers.push(m);
+ if(markers.length===2){
+  line=L.polyline([], {color:'red',weight:3}).addTo(map);
+  updateDistance();
+ }
 });
 
-/* UPDATE DISTANCE LIVE */
+/* -------- LIVE DISTANCE -------- */
 function updateDistance(){
-  if(measureMarkers.length < 2) return;
-  const p1 = measureMarkers[0].getLatLng();
-  const p2 = measureMarkers[1].getLatLng();
-
-  distanceLine.setLatLngs([p1,p2]);
-
-  const meters = map.distance(p1,p2);
-  const km = meters/1000;
-  const miles = km*0.621371;
-  const text = `<b>Distance</b><br>${km.toFixed(2)} km<br>${miles.toFixed(2)} miles`;
-
-  if(!distancePopup){
-    distancePopup = L.popup({closeButton:false})
-      .setLatLng(L.latLngBounds([p1,p2]).getCenter())
-      .setContent(text)
-      .openOn(map);
-  } else {
-    distancePopup.setLatLng(L.latLngBounds([p1,p2]).getCenter()).setContent(text);
-  }
+ if(markers.length<2) return;
+ const p1=markers[0].getLatLng();
+ const p2=markers[1].getLatLng();
+ line.setLatLngs([p1,p2]);
+ const m=map.distance(p1,p2);
+ const km=(m/1000).toFixed(2);
+ const mi=(km*0.621371).toFixed(2);
+ const center=L.latLngBounds([p1,p2]).getCenter();
+ if(!popup){
+  popup=L.popup({closeButton:false}).setLatLng(center)
+   .setContent(`<b>Distance</b><br>${km} km<br>${mi} miles`).openOn(map);
+ }else{
+  popup.setLatLng(center)
+   .setContent(`<b>Distance</b><br>${km} km<br>${mi} miles`);
+ }
 }
 
-/* CLEAR MEASUREMENT */
-function clearMeasurement(){
-  measureMarkers.forEach(m=>map.removeLayer(m));
-  measureMarkers=[];
-  if(distanceLine){ map.removeLayer(distanceLine); distanceLine=null; }
-  if(distancePopup){ map.closePopup(distancePopup); distancePopup=null; }
-}
-
-/* AUTO START GPS */
-window.onload = () => { setTimeout(startGPS,500); }
+/* -------- MAP INTERACTION -------- */
+map.on('mousedown touchstart',()=>{});
+map.on('mouseup touchend',()=>{});
+map.on('zoomstart',()=>{});
+map.on('zoomend',()=>{});
 </script>
 </body>
 </html>
