@@ -110,27 +110,41 @@ if('geolocation' in navigator){
 function toggleFollow(){ followMode=!followMode; }
 
 /* -------- MEASURE MARKERS -------- */
-function enableMeasure(){ measuring=true; followMode=false; alert("Tap map to place markers"); }
-function clearMeasure(){
- markers.forEach(m=>map.removeLayer(m));
- markers=[]; if(line) map.removeLayer(line); line=null;
- if(popup) map.closePopup(popup); popup=null;
- measuring=false;
+function enableMeasure(){
+    measuring = true; 
+    followMode = false; 
+    // Place marker immediately at map center
+    const center = map.getCenter();
+    addMarker(center);
 }
 
-map.on('click',e=>{
- if(!measuring) return;
- if(markers.length===2) clearMeasure();
- const m=L.marker(e.latlng,{draggable:true}).addTo(map);
- m.on('dragstart',()=>{ dragging=true; followMode=false; });
- m.on('drag',updateDistance);
- m.on('dragend',()=>{ dragging=false; updateDistance(); });
- markers.push(m);
- if(markers.length===2){
-  line=L.polyline([], {color:'red',weight:3}).addTo(map);
-  updateDistance();
- }
-});
+// Function to add marker and attach events
+function addMarker(latlng){
+    if(markers.length === 2) clearMeasure(); // max 2 markers
+
+    const m = L.marker(latlng, {draggable: true}).addTo(map);
+
+    m.on('dragstart', () => { dragging = true; followMode = false; });
+    m.on('drag', updateDistance);
+    m.on('dragend', () => { dragging = false; updateDistance(); });
+
+    markers.push(m);
+
+    if(markers.length === 2){
+        line = L.polyline([], {color: 'red', weight: 3}).addTo(map);
+        updateDistance();
+    }
+}
+
+function clearMeasure(){
+ markers.forEach(m=>map.removeLayer(m));
+ markers=[];
+ if(line) map.removeLayer(line);
+ line=null;
+ if(popup) map.closePopup(popup);
+ popup=null;
+ measuring=false;
+}
 
 /* -------- LIVE DISTANCE -------- */
 function updateDistance(){
@@ -150,12 +164,6 @@ function updateDistance(){
    .setContent(`<b>Distance</b><br>${km} km<br>${mi} miles`);
  }
 }
-
-/* -------- MAP INTERACTION -------- */
-map.on('mousedown touchstart',()=>{});
-map.on('mouseup touchend',()=>{});
-map.on('zoomstart',()=>{});
-map.on('zoomend',()=>{});
 </script>
 </body>
 </html>
